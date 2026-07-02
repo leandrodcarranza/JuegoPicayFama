@@ -145,4 +145,50 @@ public class GameController : ControllerBase
             });
         }
     }
+    [Authorize]
+    [HttpGet("history/{gameId}")]
+    public async Task<IActionResult> GetHistory(int gameId)
+    {
+        try
+        {
+            var playerIdClaim = User.FindFirst("playerId")?.Value;
+            if (string.IsNullOrWhiteSpace(playerIdClaim))
+                return Unauthorized(new { message = "Token inválido." });
+
+            var playerId = int.Parse(playerIdClaim);
+            var response = await _gameService.GetGameHistoryAsync(playerId, gameId);
+
+            if (response == null)
+                return NotFound(new { message = "Juego no encontrado." });
+
+            return Ok(response);
+        }
+        catch
+        {
+            return StatusCode(500, new { message = "Error interno." });
+        }
+    }
+    [Authorize]
+    [HttpPost("abandon/{gameId}")]
+    public async Task<IActionResult> Abandon(int gameId)
+    {
+        try
+        {
+            var playerIdClaim = User.FindFirst("playerId")?.Value;
+            if (string.IsNullOrWhiteSpace(playerIdClaim))
+                return Unauthorized(new { message = "Token inválido." });
+
+            var playerId = int.Parse(playerIdClaim);
+            var result = await _gameService.AbandonGameAsync(playerId, gameId);
+
+            if (!result)
+                return NotFound(new { message = "Juego no encontrado." });
+
+            return Ok(new { message = "Juego abandonado." });
+        }
+        catch
+        {
+            return StatusCode(500, new { message = "Error interno." });
+        }
+    }
 }

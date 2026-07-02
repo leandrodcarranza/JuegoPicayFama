@@ -75,12 +75,17 @@ public class GameService : IGameService
         if (player == null)
             return null;
 
-        // Si tiene juego activo, devuelve null para que el controller informe el error
         var activeGame = await _context.Games
-            .FirstOrDefaultAsync(g => g.PlayerId == playerId && !g.IsFinished);
+    .FirstOrDefaultAsync(g => g.PlayerId == playerId && !g.IsFinished);
 
+        // Si tiene juego activo, lo retoma
         if (activeGame != null)
-            return null;
+            return new StartGameResponse
+            {
+                GameId = activeGame.Id,
+                PlayerId = activeGame.PlayerId,
+                CreatedAt = activeGame.CreatedAt
+            };
 
         var game = new Game
         {
@@ -134,7 +139,6 @@ public class GameService : IGameService
 
         // ✅ Solo usamos el GameCore, sin loop manual
         var result = Evaluator.ValidateAttempt(game.SecretNumber, request.AttemptedNumber);
-        
 
         var attempt = new Attempt
         {
@@ -160,7 +164,42 @@ public class GameService : IGameService
             Message = result.Message
         };
     }
+    public async Task<GameHistoryResponse?> GetGameHistoryAsync(int playerId, int gameId)
+    {
+        var game = await _context.Games
+            .Include(g => g.Attempts)
+            .FirstOrDefaultAsync(g => g.Id == gameId && g.PlayerId == playerId);
 
+        if (game == null)
+            return null;
+
+        return new GameHistoryResponse
+        {
+            GameId = game.Id,
+            IsFinished = game.IsFinished,
+            Attempts = game.Attempts
+                .OrderBy(a => a.CreatedAt)
+                .Select(a => new AttemptDto
+                {
+                    AttemptedNumber = a.AttemptedNumber,
+                    Famas = a.Famas,
+                    Picas = a.Picas,
+                    Message = a.Message
+                }).ToList()
+        };
+    }
+    public async Task<bool> AbandonGameAsync(int playerId, int gameId)
+    {
+        var game = await _context.Games
+            .FirstOrDefaultAsync(g => g.Id == gameId && g.PlayerId == playerId);
+
+        if (game == null)
+            return false;
+
+        game.IsFinished = true;
+        await _context.SaveChangesAsync();
+        return true;
+    }
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private bool IsValidNumber(string number)

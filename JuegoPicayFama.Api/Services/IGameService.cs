@@ -8,4 +8,6 @@ public interface IGameService
     Task<TokenResponse?> LoginAsync(LoginRequest request);
     Task<StartGameResponse?> StartGameAsync(int playerId);
     Task<GuessNumberResponse?> GuessNumberAsync(int playerId, GuessNumberRequest request);
+    Task<GameHistoryResponse?> GetGameHistoryAsync(int playerId, int gameId);
+    Task<bool> AbandonGameAsync(int playerId, int gameId);
 }

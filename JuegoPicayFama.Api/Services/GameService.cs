@@ -33,11 +33,8 @@ public class GameService : IGameService
         }
 
         var emailExists = await _context.Players.AnyAsync(p => p.Email == request.Email);
-
         if (emailExists)
-        {
             return null;
-        }
 
         var player = new Player
         {
@@ -67,9 +64,7 @@ public class GameService : IGameService
             .FirstOrDefaultAsync(p => p.Email == request.Email && p.Password == request.Password);
 
         if (player == null)
-        {
             return null;
-        }
 
         return new TokenResponse { Token = GenerateToken(player) };
     }
@@ -77,24 +72,20 @@ public class GameService : IGameService
     public async Task<StartGameResponse?> StartGameAsync(int playerId)
     {
         var player = await _context.Players.FindAsync(playerId);
-
         if (player == null)
-        {
             return null;
-        }
 
         var activeGame = await _context.Games
-            .FirstOrDefaultAsync(g => g.PlayerId == playerId && !g.IsFinished);
+    .FirstOrDefaultAsync(g => g.PlayerId == playerId && !g.IsFinished);
 
+        // Si tiene juego activo, lo retoma
         if (activeGame != null)
-        {
             return new StartGameResponse
             {
                 GameId = activeGame.Id,
                 PlayerId = activeGame.PlayerId,
                 CreatedAt = activeGame.CreatedAt
             };
-        }
 
         var game = new Game
         {
@@ -118,9 +109,7 @@ public class GameService : IGameService
     public async Task<GuessNumberResponse?> GuessNumberAsync(int playerId, GuessNumberRequest request)
     {
         if (request.GameId <= 0 || string.IsNullOrWhiteSpace(request.AttemptedNumber))
-        {
             return null;
-        }
 
         if (!IsValidNumber(request.AttemptedNumber))
         {
@@ -128,7 +117,7 @@ public class GameService : IGameService
             {
                 GameId = request.GameId,
                 AttemptedNumber = request.AttemptedNumber,
-                Message = "El número debe tener 4 dígitos y no debe contener dígitos repetidos."
+                Message = "El número debe tener 4 dígitos sin repetir."
             };
         }
 
@@ -136,9 +125,7 @@ public class GameService : IGameService
             .FirstOrDefaultAsync(g => g.Id == request.GameId && g.PlayerId == playerId);
 
         if (game == null)
-        {
             return null;
-        }
 
         if (game.IsFinished)
         {
@@ -150,40 +137,23 @@ public class GameService : IGameService
             };
         }
 
-        int famas = 0;
-        int picas = 0;
-
-        for (int i = 0; i < 4; i++)
-        {
-            if (request.AttemptedNumber[i] == game.SecretNumber[i])
-            {
-                famas++;
-            }
-            else if (game.SecretNumber.Contains(request.AttemptedNumber[i]))
-            {
-                picas++;
-            }
-        }
-
+        // ✅ Solo usamos el GameCore, sin loop manual
         var result = Evaluator.ValidateAttempt(game.SecretNumber, request.AttemptedNumber);
-        string message = result.Message;
 
         var attempt = new Attempt
         {
             GameId = game.Id,
             AttemptedNumber = request.AttemptedNumber,
-            Famas = famas,
-            Picas = picas,
-            Message = message,
+            Famas = result.Fama,
+            Picas = result.Pica,
+            Message = result.Message,
             CreatedAt = DateTime.UtcNow
         };
 
         _context.Attempts.Add(attempt);
 
-        if (famas == 4)
-        {
+        if (result.Fama == 4)
             game.IsFinished = true;
-        }
 
         await _context.SaveChangesAsync();
 
@@ -191,9 +161,46 @@ public class GameService : IGameService
         {
             GameId = game.Id,
             AttemptedNumber = request.AttemptedNumber,
-            Message = message
+            Message = result.Message
         };
     }
+    public async Task<GameHistoryResponse?> GetGameHistoryAsync(int playerId, int gameId)
+    {
+        var game = await _context.Games
+            .Include(g => g.Attempts)
+            .FirstOrDefaultAsync(g => g.Id == gameId && g.PlayerId == playerId);
+
+        if (game == null)
+            return null;
+
+        return new GameHistoryResponse
+        {
+            GameId = game.Id,
+            IsFinished = game.IsFinished,
+            Attempts = game.Attempts
+                .OrderBy(a => a.CreatedAt)
+                .Select(a => new AttemptDto
+                {
+                    AttemptedNumber = a.AttemptedNumber,
+                    Famas = a.Famas,
+                    Picas = a.Picas,
+                    Message = a.Message
+                }).ToList()
+        };
+    }
+    public async Task<bool> AbandonGameAsync(int playerId, int gameId)
+    {
+        var game = await _context.Games
+            .FirstOrDefaultAsync(g => g.Id == gameId && g.PlayerId == playerId);
+
+        if (game == null)
+            return false;
+
+        game.IsFinished = true;
+        await _context.SaveChangesAsync();
+        return true;
+    }
+    // ── Helpers ───────────────────────────────────────────────────────────────
 
     private bool IsValidNumber(string number)
     {
@@ -210,11 +217,8 @@ public class GameService : IGameService
         while (digits.Count < 4)
         {
             var digit = random.Next(0, 10);
-
             if (!digits.Contains(digit))
-            {
                 digits.Add(digit);
-            }
         }
 
         return string.Join("", digits);
@@ -223,9 +227,7 @@ public class GameService : IGameService
     private string GenerateToken(Player player)
     {
         var jwtKey = _configuration["Jwt:Key"]!;
-
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
-
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
         var claims = new[]
